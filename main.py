@@ -221,17 +221,17 @@ class PublicGoodsGame(object):
             if terminate:
                 break
 
-
+log_data = []
 def play_game(args, rg_ratio):
     print("Running on the process {}".format(os.getpid()))
     game = PublicGoodsGame(args)
     game.set_r(args.G * rg_ratio)
     game.simulate()
-
-    log_info_file = open(log_info_fn, 'a', newline='')
-    log_info_writer = csv.writer(log_info_file)
-    log_info_writer.writerow([rg_ratio, game.rho_c[-1]]+game.rho_c)
-    log_info_file.close()
+    log_data.append([rg_ratio, game.rho_c[-1]]+game.rho_c)
+    #log_info_file = open(log_info_fn, 'a', newline='')
+    #log_info_writer = csv.writer(log_info_file)
+    #log_info_writer.writerow([rg_ratio, game.rho_c[-1]]+game.rho_c)
+    #log_info_file.close()
 
 
 class PlotLinesHandler(object):
@@ -309,9 +309,14 @@ if __name__ == "__main__":
     n_cpus = multiprocessing.cpu_count()
     args_play_games = [(args, rg_ratio) for rg_ratio in np.arange(0.70, 1.21, 0.02)]
     print("cpu count: {}".format(n_cpus))
-    pool = multiprocessing.Pool(n_cpus)
+    pool = multiprocessing.Pool(n_cpus+2)
     pool.starmap(play_game, args_play_games)
     
+    log_info_file = open(log_info_fn, 'a', newline='')
+    log_info_writer = csv.writer(log_info_file)
+    for data in log_data:
+        log_info_writer.writerow(data)
+    log_info_file.close()
     plot_rho_c_rG_ratio(log_info_fn)
 
     #plot_line_handler = PlotLinesHandler(xlabel="MCS", ylabel="rho_c", title_param={"L": args.l*args.l})

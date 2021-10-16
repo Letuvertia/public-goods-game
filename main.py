@@ -221,11 +221,10 @@ class PublicGoodsGame(object):
             if terminate:
                 break
 
-log_data = []
-def play_game(args, rg_ratio):
-    print("Running on the process {}".format(os.getpid()))
+def play_game(parser, rg_ratio, log_data):
+    args = parser.get_args()
+    args.r = args.G * rg_ratio
     game = PublicGoodsGame(args)
-    game.set_r(args.G * rg_ratio)
     game.simulate()
     log_data.append([rg_ratio, game.rho_c[-1]]+game.rho_c)
     #log_info_file = open(log_info_fn, 'a', newline='')
@@ -307,7 +306,9 @@ if __name__ == "__main__":
         log_info_file.close()
     
     n_cpus = multiprocessing.cpu_count()
-    args_play_games = [(args, rg_ratio) for rg_ratio in np.arange(0.70, 1.21, 0.02)]
+    manager = multiprocessing.Manager()
+    log_data = manager.list()
+    args_play_games = [(parser, rg_ratio, log_data) for rg_ratio in np.arange(0.70, 1.21, 0.02)]
     print("cpu count: {}".format(n_cpus))
     pool = multiprocessing.Pool(n_cpus+2)
     pool.starmap(play_game, args_play_games)

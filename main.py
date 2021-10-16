@@ -3,6 +3,7 @@ import csv
 import itertools
 import os
 import matplotlib.pyplot as plt
+import multiprocessing
 import numpy as np
 
 
@@ -83,12 +84,16 @@ class Agent(object):
         return True if np.random.uniform() < p else False
 
 
-    def get_payoff(self):
+    def _get_net_gain(self):
         if self.net is None:
             raise TypeError("net is not initialized.")
         payoff = self.a*len([ag for ag in self.net if ag.isCooperator])*self.r / len(self.net)
+        return payoff
+    
+    def get_payoff(self):
+        payoff = sum([ag._get_net_gain() for ag in self.net])
         if self.isCooperator:
-            payoff -= self.a
+            payoff -= self.a * len(self.net)
         return payoff
 
 
@@ -137,6 +142,10 @@ class PublicGoodsGame(object):
             self.n_c, self.n_ags-self.n_c, self.n_c/self.n_ags))
         
         self.rho_c = list()
+    
+
+    def set_r(self, r):
+        self.args.r = r
     
 
     def init_ag(self):
@@ -211,7 +220,19 @@ class PublicGoodsGame(object):
             self.rho_c.append(n_c/self.n_ags)
             if terminate:
                 break
-        
+
+
+def play_game(args, rg_ratio):
+    print("Running on the process {}".format(os.getpid()))
+    game = PublicGoodsGame(args)
+    game.set_r(args.G * rg_ratio)
+    game.simulate()
+
+    log_info_file = open(log_info_fn, 'a', newline='')
+    log_info_writer = csv.writer(log_info_file)
+    log_info_writer.writerow([rg_ratio, game.rho_c[-1]]+game.rho_c)
+    log_info_file.close()
+
 
 class PlotLinesHandler(object):
 
@@ -284,17 +305,15 @@ if __name__ == "__main__":
         log_info_writer = csv.writer(log_info_file)
         log_info_writer.writerow(["r/G", "final rho_c"] + ["MCS "+str(i) for i in range(args.MCS)])
         log_info_file.close()
+    
+    n_cpus = multiprocessing.cpu_count()
+    args_play_games = [(args, rg_ratio) for rg_ratio in np.arange(0.70, 1.21, 0.02)]
+    print("cpu count: {}".format(n_cpus))
+    pool = multiprocessing.Pool(n_cpus)
+    pool.starmap(play_game, args_play_games)
+    
+    plot_rho_c_rG_ratio(log_info_fn)
 
     #plot_line_handler = PlotLinesHandler(xlabel="MCS", ylabel="rho_c", title_param={"L": args.l*args.l})
-    for rg_ratio in np.arange(0.90, 1.21, 0.02):
-        args.r = args.G * rg_ratio
-        game = PublicGoodsGame(args)
-        game.simulate()
-        #plot_line_handler.plot_line(data=np.array(game.rho_c), param_val=rg_ratio)
-
-        log_info_file = open(log_info_fn, 'a', newline='')
-        log_info_writer = csv.writer(log_info_file)
-        log_info_writer.writerow([rg_ratio, game.rho_c[-1]]+game.rho_c)
-        log_info_file.close()
+    #plot_line_handler.plot_line(data=np.array(game.rho_c), param_val=rg_ratio)
     #plot_line_handler.save_fig(param_n="rG")
-    plot_rho_c_rG_ratio(log_info_fn)

@@ -339,8 +339,7 @@ if __name__ == "__main__":
     log_data = manager.list()
     args_play_games = [(parser.get_args(), rg_ratio, log_data) for rg_ratio in np.arange(0.70, 1.21, 0.02)]
     print("cpu count: {}".format(n_cpus))
-    #pool = multiprocessing.Pool(n_cpus+2)
-    pool = multiprocessing.Pool(1)
+    pool = multiprocessing.Pool(n_cpus+2)
     pool.starmap(play_game, args_play_games)
     
     log_info_file = open(log_info_fn, 'a', newline='')

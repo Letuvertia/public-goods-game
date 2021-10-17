@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 import multiprocessing
 import numpy as np
 
+SELF = 0
+LEFT = 1
+DOWN = 2
+RIGHT = 3
+UP = 4
+
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -66,34 +72,55 @@ class ArgsModel(object):
 
 class Agent(object):
     _ids = itertools.count(0)
+    direc = [SELF, LEFT, UP, RIGHT, DOWN]
+    opposite = {SELF: SELF, 
+                LEFT: RIGHT,
+                RIGHT: LEFT, 
+                UP: DOWN,
+                DOWN: UP}
 
     def __init__(self, args) -> None:
         super().__init__()
         
         self.id = next(self._ids)
-        self.isCooperator = self.draw(p=0.5)
+        self.isCooperator = self.draw_random_set(p=0.5)
+        self._n_coop = self._get_n_coop()
         self.net = None
         self.payoff = None
 
         self.a = args.a
         self.r = args.r
-    
 
     @staticmethod
     def draw(p):
         return True if np.random.uniform() < p else False
-
+    
+    def draw_random_set(self, p):
+        return {d: self.draw(p) for d in Agent.direc}
+    
+    def set_n_Coop(self, n):
+        res = np.full(5, False)
+        res[np.random.choice(5, n, replace=False)] = True
+        self._n_coop = n
+        return {d: isCoop for d, isCoop in zip(Agent.direc, list(res))}
+    
+    def _get_n_coop(self):
+        return len([isCoop for _, isCoop in self.isCooperator.items() if isCoop])
+    
+    def get_n_coop(self):
+        return self._n_coop
 
     def _get_net_gain(self):
         if self.net is None:
             raise TypeError("net is not initialized.")
-        payoff = self.a*len([ag for ag in self.net if ag.isCooperator])*self.r / len(self.net)
+        n_coop_net = len([ag for dir, ag in self.net.items() if ag.isCooperator[Agent.opposite[dir]]])
+        payoff = self.a*n_coop_net*self.r / len(self.net)
         return payoff
     
     def get_payoff(self):
-        payoff = sum([ag._get_net_gain() for ag in self.net])
+        payoff = sum([ag._get_net_gain() for direc, ag in self.net.items()])
         if self.isCooperator:
-            payoff -= self.a * len(self.net)
+            payoff -= self.a * self._n_coop
         return payoff
 
 
@@ -128,7 +155,11 @@ class UnbalancedEdgeHolder(object):
     
 
 class PublicGoodsGame(object):
-    adjacent = [(0, 0), (-1, 0), (1, 0), (0, 1), (0, -1)]
+    adjacent = {SELF: (0, 0), 
+                LEFT: (-1, 0),
+                RIGHT: (1, 0), 
+                UP: (0, 1),
+                DOWN: (0, -1)}
 
     def __init__(self, args) -> None:
         super().__init__()
@@ -142,10 +173,6 @@ class PublicGoodsGame(object):
             self.n_c, self.n_ags-self.n_c, self.n_c/self.n_ags))
         
         self.rho_c = list()
-    
-
-    def set_r(self, r):
-        self.args.r = r
     
 
     def init_ag(self):
@@ -163,11 +190,13 @@ class PublicGoodsGame(object):
             for i in range(self.args.l):
                 for j in range(self.args.l):
                     id2ag[ags[i][j].id] = ags[i][j]
-                    ags[i][j].net = [ags[(i+di)%self.args.l][(j+dj)%self.args.l] for di, dj in PublicGoodsGame.adjacent]
+                    ags[i][j].net = dict()
+                    for direc, (di, dj) in PublicGoodsGame.adjacent.items():
+                        ags[i][j].net[direc] = ags[(i+di)%self.args.l][(j+dj)%self.args.l]
                     
                     # check unbalanced edges
-                    for ag in ags[i][j].net:
-                        if ags[i][j].isCooperator != ag.isCooperator:
+                    for direc, ag in ags[i][j].net.items():
+                        if ags[i][j].get_n_coop() != ag.get_n_coop():
                             u_edge_set.add(ags[i][j].id, ag.id)
         else:
             raise TypeError("G other than 5 is not supported.")
@@ -176,7 +205,7 @@ class PublicGoodsGame(object):
     
     
     def get_n_c(self):
-        return sum([1 for ag_ls in self.ags for ag in ag_ls if ag.isCooperator])
+        return sum([ag.get_n_coop()/len(ag.net) for ag_ls in self.ags for ag in ag_ls])
 
 
     def simulate_step(self):
@@ -193,15 +222,15 @@ class PublicGoodsGame(object):
         # ag_y = self.id2ag[ag_y_id]
         ag_x = self.ags[np.random.randint(self.args.l)][np.random.randint(self.args.l)]
         ag_y = ag_x.net[np.random.randint(len(ag_x.net))]
-        if ag_x.isCooperator == ag_y.isCooperator:
+        if ag_x.get_n_coop() == ag_y.get_n_coop():
            return
 
         prob = 1 / (1 + np.exp((ag_y.get_payoff()-ag_x.get_payoff())/self.args.K))
         if np.random.uniform() < prob:
-            ag_y.isCooperator = ag_x.isCooperator
+            ag_y.set_n_Coop(n=ag_x.get_n_coop())
             # update y
-            for ag in ag_y.net:
-                if ag.isCooperator == ag_y.isCooperator:
+            for direc, ag in ag_y.net.items():
+                if ag.get_n_coop() == ag_y.get_n_coop():
                     self.u_edge_set.remove(ag_y.id, ag.id)
                 else:
                     self.u_edge_set.add(ag_y.id, ag.id)
@@ -216,13 +245,13 @@ class PublicGoodsGame(object):
                 if terminate:
                     break
             n_c = self.get_n_c()
-            print("MCS {}: rho_c {:.4f}".format(mcs_str, n_c/self.n_ags))
+            print("|r={:.3f}| MCS {}: rho_c {:.4f}".format(self.args.r, mcs_str, n_c/self.n_ags))
             self.rho_c.append(n_c/self.n_ags)
             if terminate:
                 break
 
-def play_game(parser, rg_ratio, log_data):
-    args = parser.get_args()
+
+def play_game(args, rg_ratio, log_data):
     args.r = args.G * rg_ratio
     game = PublicGoodsGame(args)
     game.simulate()
@@ -298,7 +327,7 @@ if __name__ == "__main__":
     args = parser.get_args()
     np.random.seed(args.seed)
 
-    log_info_fn = "log_info_G-{}_K-{}_L-{}.csv".format(args.G, args.K, args.l*args.l)
+    log_info_fn = "log_info_dif_strat_G-{}_K-{}_L-{}.csv".format(args.G, args.K, args.l*args.l)
     if not os.path.exists(log_info_fn):
         log_info_file = open(log_info_fn, 'w', newline='')
         log_info_writer = csv.writer(log_info_file)
@@ -308,9 +337,10 @@ if __name__ == "__main__":
     n_cpus = multiprocessing.cpu_count()
     manager = multiprocessing.Manager()
     log_data = manager.list()
-    args_play_games = [(parser, rg_ratio, log_data) for rg_ratio in np.arange(0.70, 1.21, 0.02)]
+    args_play_games = [(parser.get_args(), rg_ratio, log_data) for rg_ratio in np.arange(0.70, 1.21, 0.02)]
     print("cpu count: {}".format(n_cpus))
-    pool = multiprocessing.Pool(n_cpus+2)
+    #pool = multiprocessing.Pool(n_cpus+2)
+    pool = multiprocessing.Pool(1)
     pool.starmap(play_game, args_play_games)
     
     log_info_file = open(log_info_fn, 'a', newline='')

@@ -12,7 +12,6 @@ DOWN = 2
 RIGHT = 3
 UP = 4
 
-
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -53,6 +52,8 @@ class ArgsModel(object):
             help="Monte Carlo step (MCS)")
         parser.add_argument("--n_elestep", type=float, default=0,
             help="# of elementary steps")
+        parser.add_argument("--dif_strat", type=bool, default=True,
+            help="An agent will use different strategies to its neighbors.")
         parser.add_argument("--seed", type=int, default=11,
             help="")
         return parser
@@ -256,21 +257,16 @@ def play_game(args, rg_ratio, log_data):
     game = PublicGoodsGame(args)
     game.simulate()
     log_data.append([rg_ratio, game.rho_c[-1]]+game.rho_c)
-    #log_info_file = open(log_info_fn, 'a', newline='')
-    #log_info_writer = csv.writer(log_info_file)
-    #log_info_writer.writerow([rg_ratio, game.rho_c[-1]]+game.rho_c)
-    #log_info_file.close()
 
 
 class PlotLinesHandler(object):
 
-    def __init__(self, xlabel="MCS", ylabel="rho_c", ylabel_show=r"$\rho_c$", title_param={},
+    def __init__(self, xlabel="MCS", ylabel="rho_c", ylabel_show=r"$\rho_c$",
         figure_size=(9, 9), output_dir=os.path.join(os.getcwd(), "imgfiles")) -> None:
         super().__init__()
 
         self.output_dir = output_dir
         self.title = "{}-{}".format(ylabel, xlabel)
-        self.title_param = "_".join(["{}-{}".format(p_n, p_val) for p_n, p_val in title_param.items()])
         self.tried_param = list()
 
         plt.figure(figsize=figure_size, dpi=80)
@@ -282,24 +278,32 @@ class PlotLinesHandler(object):
         self.tried_param.append("{:.2f}".format(float(param_val)))
         plt.plot(np.arange(data.shape[-1]), data, linewidth=linewidth)
 
-    def save_fig(self, param_n="r"):
+    def save_fig(self, args, param_n="r"):
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
         
         plt.legend(["{}={}".format(param_n, p) for p in self.tried_param])
         title_tried_param = "{}-{}".format(param_n, "-".join(self.tried_param))
-        fn = "_".join([self.title, self.title_param, title_tried_param]) + ".png"
+        if args.dif_strat:
+            fn = "_".join([self.title, "dif_strat", get_prefix_args(args), title_tried_param]) + ".png"
+        else:
+            fn = "_".join([self.title, get_prefix_args(args), title_tried_param]) + ".png"
+        print("saving fig")
         plt.savefig(os.path.join(self.output_dir, fn))
         print("fig save to {}".format(os.path.join(self.output_dir, fn)))
 
 
-def plot_rho_c_rG_ratio(log_info_fn, xlabel="enhancement factor r/G", ylabel="rho_c", ylabel_show=r"$\rho_c$",
+def get_prefix_args(args):
+    return "G-{}_K-{}_L-{}".format(args.G, args.K, args.l*args.l)
+
+
+def plot_rho_c_rG_ratio(log_info_fn, args, xlabel="enhancement factor r/G", ylabel="rho_c", ylabel_show=r"$\rho_c$",
     figure_size=(6, 6), output_dir=os.path.join(os.getcwd(), "imgfiles")):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
     plt.figure(figsize=figure_size, dpi=80)
-    plt.title("rho_c-r/G".format(ylabel_show, xlabel))
+    plt.title("{}-{}".format(ylabel_show, xlabel))
     plt.xlabel(xlabel)
     plt.ylabel(ylabel_show)
     plt.ylim(0.0, 1.0)
@@ -314,10 +318,25 @@ def plot_rho_c_rG_ratio(log_info_fn, xlabel="enhancement factor r/G", ylabel="rh
             final_rho_c_ls.append(float(row[1]))
     
     plt.scatter(rg_ratio_ls, final_rho_c_ls)
-
-    fn = "_".join(["rho_c-rG"] + os.path.splitext(log_info_fn)[0].split("_")[-3:] + ["rG-"+"-".join(["{:.2f}".format(rg) for rg in rg_ratio_ls])]) + ".png"
+    
+    title = "{}-{}".format(ylabel, "rG")
+    if args.dif_strat:
+        fn = "_".join([title, "dif_strat", get_prefix_args(args), "rG-"+"-".join(["{:.2f}".format(rg) for rg in rg_ratio_ls])]) + ".png"
+    else:
+        fn = "_".join([title, get_prefix_args(args), "rG-"+"-".join(["{:.2f}".format(rg) for rg in rg_ratio_ls])]) + ".png"
     plt.savefig(os.path.join(output_dir, fn))
     print("fig save to {}".format(os.path.join(output_dir, fn)))
+
+
+def plot_rho_c_MCS(log_info_fn, args):
+    plot_line_handler = PlotLinesHandler(xlabel="MCS", ylabel="rho_c")
+    with open(log_info_fn, newline="") as log_info_file:
+        log_info_reader = csv.reader(log_info_file)
+        for row_idx, row in enumerate(log_info_reader):
+            if row_idx == 0:
+                continue
+            plot_line_handler.plot_line(data=np.array(row[2:]), param_val=row[0])
+    plot_line_handler.save_fig(args, param_n="rG")
 
 
 
@@ -325,15 +344,20 @@ def plot_rho_c_rG_ratio(log_info_fn, xlabel="enhancement factor r/G", ylabel="rh
 if __name__ == "__main__":
     parser = ArgsModel()
     args = parser.get_args()
-    np.random.seed(args.seed)
 
-    log_info_fn = "log_info_dif_strat_G-{}_K-{}_L-{}.csv".format(args.G, args.K, args.l*args.l)
+    # open log file
+    if args.dif_strat:
+        log_info_fn = "log_info_dif_strat_{}.csv".format(get_prefix_args(args))
+    else:
+        log_info_fn = "log_info_{}.csv".format(get_prefix_args(args))
+    '''
     if not os.path.exists(log_info_fn):
         log_info_file = open(log_info_fn, 'w', newline='')
         log_info_writer = csv.writer(log_info_file)
         log_info_writer.writerow(["r/G", "final rho_c"] + ["MCS "+str(i) for i in range(args.MCS)])
         log_info_file.close()
     
+    # multiprocessing
     n_cpus = multiprocessing.cpu_count()
     manager = multiprocessing.Manager()
     log_data = manager.list()
@@ -342,13 +366,16 @@ if __name__ == "__main__":
     pool = multiprocessing.Pool(n_cpus+2)
     pool.starmap(play_game, args_play_games)
     
+    # put rho_c list into log file
     log_info_file = open(log_info_fn, 'a', newline='')
     log_info_writer = csv.writer(log_info_file)
     for data in log_data:
         log_info_writer.writerow(data)
     log_info_file.close()
-    plot_rho_c_rG_ratio(log_info_fn)
+    '''
 
-    #plot_line_handler = PlotLinesHandler(xlabel="MCS", ylabel="rho_c", title_param={"L": args.l*args.l})
-    #plot_line_handler.plot_line(data=np.array(game.rho_c), param_val=rg_ratio)
-    #plot_line_handler.save_fig(param_n="rG")
+    # plot
+    #plot_rho_c_rG_ratio(log_info_fn, args)
+    plot_rho_c_MCS(log_info_fn, args)
+
+    

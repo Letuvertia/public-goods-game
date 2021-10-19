@@ -52,7 +52,7 @@ class ArgsModel(object):
             help="Monte Carlo step (MCS)")
         parser.add_argument("--n_elestep", type=float, default=0,
             help="# of elementary steps")
-        parser.add_argument("--dif_strat", type=bool, default=True,
+        parser.add_argument("--dif_strat", type=str2bool, default=True,
             help="An agent will use different strategies to its neighbors.")
         parser.add_argument("--seed", type=int, default=11,
             help="")
@@ -308,6 +308,7 @@ def plot_rho_c_rG_ratio(log_info_fn, args, xlabel="enhancement factor r/G", ylab
     plt.ylabel(ylabel_show)
     plt.ylim(0.0, 1.0)
 
+    print("loading log data from {}".format(log_info_fn))
     rg_ratio_ls, final_rho_c_ls = list(), list()
     with open(log_info_fn, newline="") as log_info_file:
         log_info_reader = csv.reader(log_info_file)
@@ -329,6 +330,7 @@ def plot_rho_c_rG_ratio(log_info_fn, args, xlabel="enhancement factor r/G", ylab
 
 
 def plot_rho_c_MCS(log_info_fn, args):
+    print("loading log data from {}".format(log_info_fn))
     plot_line_handler = PlotLinesHandler(xlabel="MCS", ylabel="rho_c")
     with open(log_info_fn, newline="") as log_info_file:
         log_info_reader = csv.reader(log_info_file)

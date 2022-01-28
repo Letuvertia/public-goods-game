@@ -1,1 +1,1 @@
-# public_goods_game
+# public-goods-game
